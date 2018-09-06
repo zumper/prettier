@@ -1235,6 +1235,11 @@ function printPathNoParens(path, options, print, args) {
         ]);
       }
 
+      if (canHaveTrailingSeparator) {
+        const trailingComma = /,\s*}$/.test(options.originalText.slice(n.start, n.end))
+        return group(content, { shouldBreak: trailingComma });
+      }
+
       // If we inline the object as first argument of the parent, we don't want
       // to create another group so that the object breaks before the return
       // type
@@ -1301,7 +1306,10 @@ function printPathNoParens(path, options, print, args) {
         path.call(print, "callee")
       ]);
     case "ArrayExpression":
-    case "ArrayPattern":
+    case "ArrayPattern": {
+      const trailingComma = /,\s*]$/.test(options.originalText.slice(n.start, n.end));
+      const breakline = trailingComma ? hardline : softline;
+
       if (n.elements.length === 0) {
         if (!hasDanglingComments(n)) {
           parts.push("[]");
@@ -1311,7 +1319,7 @@ function printPathNoParens(path, options, print, args) {
               concat([
                 "[",
                 comments.printDanglingComments(path, options),
-                softline,
+                breakline,
                 "]"
               ])
             )
@@ -1334,7 +1342,7 @@ function printPathNoParens(path, options, print, args) {
         // Note that getLast returns null if the array is empty, but
         // we already check for an empty array just above so we are safe
         const needsForcedTrailingComma =
-          canHaveTrailingComma && lastElem === null;
+          trailingComma || (canHaveTrailingComma && lastElem === null);
 
         parts.push(
           group(
@@ -1342,7 +1350,7 @@ function printPathNoParens(path, options, print, args) {
               "[",
               indent(
                 concat([
-                  softline,
+                  breakline,
                   printArrayItems(path, options, "elements", print)
                 ])
               ),
@@ -1359,7 +1367,7 @@ function printPathNoParens(path, options, print, args) {
                 options,
                 /* sameIndent */ true
               ),
-              softline,
+              breakline,
               "]"
             ])
           )
@@ -1372,6 +1380,7 @@ function printPathNoParens(path, options, print, args) {
       );
 
       return concat(parts);
+    }
     case "SequenceExpression": {
       const parent = path.getParentNode(0);
       if (
