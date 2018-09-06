@@ -26,7 +26,8 @@ const {
 const {
   isNextLineEmpty,
   isNextLineEmptyAfterIndex,
-  getNextNonSpaceNonCommentCharacterIndex
+  getNextNonSpaceNonCommentCharacterIndex,
+  writtenWithParens
 } = require("../common/util-shared");
 const isIdentifierName = require("esutils").keyword.isIdentifierNameES6;
 const embed = require("./embed");
@@ -5182,10 +5183,13 @@ function printBinaryishExpressions(
   print,
   options,
   isNested,
-  isInsideParenthesis
+  isInsideParenthesis,
+  flattening
 ) {
   let parts = [];
   const node = path.getValue();
+
+  const withParens = flattening && writtenWithParens(node, options);
 
   // We treat BinaryExpression and LogicalExpression nodes the same.
   if (isBinaryish(node)) {
@@ -5208,7 +5212,8 @@ function printBinaryishExpressions(
               print,
               options,
               /* isNested */ true,
-              isInsideParenthesis
+              isInsideParenthesis,
+              true
             ),
           "left"
         )
@@ -5249,6 +5254,11 @@ function printBinaryishExpressions(
   } else {
     // Our stopping case. Simply print the node normally.
     parts.push(path.call(print));
+  }
+
+  if (withParens) {
+    parts.unshift("(");
+    parts.push(")");
   }
 
   return parts;
