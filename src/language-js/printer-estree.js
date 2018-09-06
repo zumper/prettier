@@ -151,6 +151,12 @@ function genericPrint(path, options, printPath, args) {
 }
 
 function hasPrettierIgnore(path) {
+  const node = path.getValue();
+  if (node && node.type) {
+    if (node.type === "TemplateElement" || node.type === "TemplateLiteral") {
+      return true;
+    }
+  }
   return hasIgnoreComment(path) || hasJsxIgnoreComment(path);
 }
 
