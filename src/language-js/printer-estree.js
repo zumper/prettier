@@ -3454,7 +3454,6 @@ const functionCompositionFunctionNames = new Set([
   "composeK", // Ramda
   "flow", // Lodash
   "flowRight", // Lodash
-  "connect" // Redux
 ]);
 
 function isFunctionCompositionFunction(node) {
