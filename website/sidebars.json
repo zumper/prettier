@@ -4,7 +4,6 @@
       "index",
       "why-prettier",
       "comparison",
-      "language-support",
       "option-philosophy",
       "rationale"
     ],
@@ -16,7 +15,7 @@
       "plugins",
       "precommit",
       "watching-files",
-      "eslint",
+      "integrating-with-linters",
       "ignore"
     ],
     "Configuring Prettier": [

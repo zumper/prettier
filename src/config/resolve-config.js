@@ -2,6 +2,7 @@
 
 const thirdParty = require("../common/third-party");
 const minimatch = require("minimatch");
+const resolve = require("resolve");
 const path = require("path");
 const mem = require("mem");
 
@@ -13,6 +14,13 @@ const getExplorerMemoized = mem(opts => {
     cache: opts.cache,
     transform: result => {
       if (result && result.config) {
+        if (typeof result.config === "string") {
+          const modulePath = resolve.sync(result.config, {
+            basedir: path.dirname(result.filepath)
+          });
+          result.config = eval("require")(modulePath);
+        }
+
         if (typeof result.config !== "object") {
           throw new Error(
             `Config is only allowed to be an object, ` +
@@ -78,11 +86,10 @@ function _resolveConfig(filePath, opts, sync) {
 
     ["plugins", "pluginSearchDirs"].forEach(optionName => {
       if (Array.isArray(merged[optionName])) {
-        merged[optionName] = merged[optionName].map(
-          value =>
-            typeof value === "string" && value.startsWith(".") // relative path
-              ? path.resolve(path.dirname(result.filepath), value)
-              : value
+        merged[optionName] = merged[optionName].map(value =>
+          typeof value === "string" && value.startsWith(".") // relative path
+            ? path.resolve(path.dirname(result.filepath), value)
+            : value
         );
       }
     });
