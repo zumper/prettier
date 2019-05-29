@@ -5,6 +5,7 @@ const assert = require("assert");
 const util = require("../common/util");
 const comments = require("./comments");
 const { hasFlowShorthandAnnotationComment } = require("./utils");
+const { writtenWithParens } = require("../common/util-shared");
 
 function hasClosureCompilerTypeCastComment(text, path) {
   // https://github.com/google/closure-compiler/wiki/Annotating-Types#type-casts
