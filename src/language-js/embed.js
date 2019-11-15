@@ -161,11 +161,10 @@ function embed(path, print, textToDoc, options) {
        */
       if (
         parentParent &&
-        (parentParent.type === "TaggedTemplateExpression" &&
-          parent.quasis.length === 1 &&
-          (parentParent.tag.type === "Identifier" &&
-            (parentParent.tag.name === "md" ||
-              parentParent.tag.name === "markdown")))
+        parentParent.type === "TaggedTemplateExpression" &&
+        parent.quasis.length === 1 &&
+        parentParent.tag.type === "Identifier" &&
+        (parentParent.tag.name === "md" || parentParent.tag.name === "markdown")
       ) {
         const text = parent.quasis[0].value.raw.replace(
           /((?:\\\\)*)\\`/g,
@@ -321,7 +320,7 @@ function printGraphqlComments(lines) {
   lines
     .map(textLine => textLine.trim())
     .forEach((textLine, i, array) => {
-      // Lines are either whitespace only, or a comment (with poential whitespace
+      // Lines are either whitespace only, or a comment (with potential whitespace
       // around it). Drop whitespace-only lines.
       if (textLine === "") {
         return;

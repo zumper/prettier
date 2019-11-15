@@ -6,8 +6,9 @@ const util = require("../common/util");
 const comments = require("./comments");
 const {
   getLeftSidePathName,
+  hasFlowShorthandAnnotationComment,
   hasNakedLeftSide,
-  hasFlowShorthandAnnotationComment
+  hasNode
 } = require("./utils");
 const { writtenWithParens } = require("../common/util-shared");
 
@@ -227,36 +228,6 @@ function needsParens(path, options) {
   }
 
   switch (node.type) {
-    case "CallExpression": {
-      let firstParentNotMemberExpression = parent;
-      let i = 0;
-      // tagged templates are basically member expressions from a grammar perspective
-      // see https://tc39.github.io/ecma262/#prod-MemberExpression
-      // so are typescript's non-null assertions, though there's no grammar to point to
-      while (
-        firstParentNotMemberExpression &&
-        ((firstParentNotMemberExpression.type === "MemberExpression" &&
-          firstParentNotMemberExpression.object ===
-            path.getParentNode(i - 1)) ||
-          firstParentNotMemberExpression.type === "TaggedTemplateExpression" ||
-          firstParentNotMemberExpression.type === "TSNonNullExpression")
-      ) {
-        firstParentNotMemberExpression = path.getParentNode(++i);
-      }
-
-      if (
-        firstParentNotMemberExpression.type === "NewExpression" &&
-        firstParentNotMemberExpression.callee === path.getParentNode(i - 1)
-      ) {
-        return true;
-      }
-
-      if (parent.type === "BindExpression" && parent.callee === node) {
-        return true;
-      }
-      return false;
-    }
-
     case "SpreadElement":
     case "SpreadProperty":
       return (
@@ -286,14 +257,16 @@ function needsParens(path, options) {
           return true;
 
         case "MemberExpression":
-          return name === "object" && parent.object === node;
+        case "OptionalMemberExpression":
+          return name === "object";
 
         case "TaggedTemplateExpression":
           return true;
 
         case "NewExpression":
         case "CallExpression":
-          return name === "callee" && parent.callee === node;
+        case "OptionalCallExpression":
+          return name === "callee";
 
         case "BinaryExpression":
           return parent.operator === "**" && name === "left";
@@ -338,7 +311,8 @@ function needsParens(path, options) {
 
         case "CallExpression":
         case "NewExpression":
-          return name === "callee" && parent.callee === node;
+        case "OptionalCallExpression":
+          return name === "callee";
 
         case "ClassExpression":
         case "ClassDeclaration":
@@ -359,7 +333,7 @@ function needsParens(path, options) {
 
         case "MemberExpression":
         case "OptionalMemberExpression":
-          return name === "object" && parent.object === node;
+          return name === "object";
 
         case "AssignmentExpression":
           return (
@@ -367,8 +341,13 @@ function needsParens(path, options) {
             (node.type === "TSTypeAssertion" || node.type === "TSAsExpression")
           );
 
-        case "BinaryExpression":
-        case "LogicalExpression": {
+        case "LogicalExpression":
+          if (node.type === "LogicalExpression") {
+            return parent.operator !== node.operator;
+          }
+        // else fallthrough
+
+        case "BinaryExpression": {
           if (!node.operator && node.type !== "TSTypeAssertion") {
             return true;
           }
@@ -379,10 +358,6 @@ function needsParens(path, options) {
           const np = util.getPrecedence(no);
 
           if (pp > np) {
-            return true;
-          }
-
-          if ((po === "||" || po === "??") && no === "&&") {
             return true;
           }
 
@@ -400,7 +375,7 @@ function needsParens(path, options) {
           }
 
           // Add parenthesis when working with bitwise operators
-          // It's not stricly needed but helps with code understanding
+          // It's not strictly needed but helps with code understanding
           if (util.isBitwiseOperator(po)) {
             return true;
           }
@@ -411,44 +386,6 @@ function needsParens(path, options) {
         default:
           return false;
       }
-
-    case "TSParenthesizedType": {
-      const grandParent = path.getParentNode(1);
-
-      /**
-       * const foo = (): (() => void) => (): void => null;
-       *                 ^          ^
-       */
-      if (
-        getUnparenthesizedNode(node).type === "TSFunctionType" &&
-        parent.type === "TSTypeAnnotation" &&
-        grandParent.type === "ArrowFunctionExpression" &&
-        grandParent.returnType === parent
-      ) {
-        return true;
-      }
-
-      if (
-        (parent.type === "TSTypeParameter" ||
-          parent.type === "TypeParameter" ||
-          parent.type === "TSTypeAliasDeclaration" ||
-          parent.type === "TSTypeAnnotation" ||
-          parent.type === "TSParenthesizedType" ||
-          parent.type === "TSTypeParameterInstantiation") &&
-        (grandParent.type !== "TSTypeOperator" &&
-          grandParent.type !== "TSOptionalType")
-      ) {
-        return false;
-      }
-      // Delegate to inner TSParenthesizedType
-      if (
-        node.typeAnnotation.type === "TSParenthesizedType" &&
-        parent.type !== "TSArrayType"
-      ) {
-        return false;
-      }
-      return true;
-    }
 
     case "SequenceExpression":
       switch (parent.type) {
@@ -497,15 +434,16 @@ function needsParens(path, options) {
         case "TSAsExpression":
         case "TSNonNullExpression":
         case "BindExpression":
-        case "OptionalMemberExpression":
           return true;
 
         case "MemberExpression":
-          return parent.object === node;
+        case "OptionalMemberExpression":
+          return name === "object";
 
         case "NewExpression":
         case "CallExpression":
-          return parent.callee === node;
+        case "OptionalCallExpression":
+          return name === "callee";
 
         case "ConditionalExpression":
           return parent.test === node;
@@ -513,6 +451,36 @@ function needsParens(path, options) {
         default:
           return false;
       }
+
+    case "TSConditionalType":
+      if (parent.type === "TSConditionalType" && node === parent.extendsType) {
+        return true;
+      }
+    // fallthrough
+    case "TSFunctionType":
+    case "TSConstructorType":
+      if (parent.type === "TSConditionalType" && node === parent.checkType) {
+        return true;
+      }
+    // fallthrough
+    case "TSUnionType":
+    case "TSIntersectionType":
+      if (
+        parent.type === "TSUnionType" ||
+        parent.type === "TSIntersectionType"
+      ) {
+        return true;
+      }
+    // fallthrough
+    case "TSTypeOperator":
+    case "TSInferType":
+      return (
+        parent.type === "TSArrayType" ||
+        parent.type === "TSOptionalType" ||
+        parent.type === "TSRestType" ||
+        (parent.type === "TSIndexedAccessType" && node === parent.objectType) ||
+        parent.type === "TSTypeOperator"
+      );
 
     case "ArrayTypeAnnotation":
       return parent.type === "NullableTypeAnnotation";
@@ -631,18 +599,19 @@ function needsParens(path, options) {
         case "TypeCastExpression":
         case "TSAsExpression":
         case "TSNonNullExpression":
-        case "OptionalMemberExpression":
           return true;
 
         case "NewExpression":
         case "CallExpression":
-          return name === "callee" && parent.callee === node;
+        case "OptionalCallExpression":
+          return name === "callee";
 
         case "ConditionalExpression":
           return name === "test" && parent.test === node;
 
         case "MemberExpression":
-          return name === "object" && parent.object === node;
+        case "OptionalMemberExpression":
+          return name === "object";
 
         default:
           return false;
@@ -652,7 +621,10 @@ function needsParens(path, options) {
       switch (parent.type) {
         case "NewExpression":
         case "CallExpression":
-          return name === "callee"; // Not strictly necessary, but it's clearer to the reader if IIFEs are wrapped in parentheses.
+        case "OptionalCallExpression":
+          // Not always necessary, but it's clearer to the reader if IIFEs are wrapped in parentheses.
+          // Is necessary if it is `expression` of `ExpressionStatement`.
+          return name === "callee";
         case "TaggedTemplateExpression":
           return true; // This is basically a kind of IIFE.
         default:
@@ -661,13 +633,13 @@ function needsParens(path, options) {
 
     case "ArrowFunctionExpression":
       switch (parent.type) {
-        case "CallExpression":
-          return name === "callee";
-
         case "NewExpression":
+        case "CallExpression":
+        case "OptionalCallExpression":
           return name === "callee";
 
         case "MemberExpression":
+        case "OptionalMemberExpression":
           return name === "object";
 
         case "TSAsExpression":
@@ -696,45 +668,59 @@ function needsParens(path, options) {
       }
 
     case "OptionalMemberExpression":
-      return parent.type === "MemberExpression";
-
-    case "MemberExpression":
+    case "OptionalCallExpression":
       if (
-        parent.type === "BindExpression" &&
-        name === "callee" &&
-        parent.callee === node
+        ((parent.type === "MemberExpression" && name === "object") ||
+          (parent.type === "CallExpression" && name === "callee")) &&
+        // workaround for https://github.com/facebook/flow/issues/8159
+        !(options.parser === "flow" && parent.range[0] === node.range[0])
       ) {
-        let object = node.object;
+        return true;
+      }
+    // fallthrough
+    case "CallExpression":
+    case "MemberExpression":
+    case "TaggedTemplateExpression":
+    case "TSNonNullExpression":
+      if (
+        (parent.type === "BindExpression" || parent.type === "NewExpression") &&
+        name === "callee"
+      ) {
+        let object = node;
         while (object) {
-          if (object.type === "CallExpression") {
-            return true;
+          switch (object.type) {
+            case "CallExpression":
+            case "OptionalCallExpression":
+              return true;
+            case "MemberExpression":
+            case "OptionalMemberExpression":
+            case "BindExpression":
+              object = object.object;
+              break;
+            // tagged templates are basically member expressions from a grammar perspective
+            // see https://tc39.github.io/ecma262/#prod-MemberExpression
+            case "TaggedTemplateExpression":
+              object = object.tag;
+              break;
+            case "TSNonNullExpression":
+              object = object.expression;
+              break;
+            default:
+              return false;
           }
-          if (
-            object.type !== "MemberExpression" &&
-            object.type !== "BindExpression"
-          ) {
-            break;
-          }
-          object = object.object;
         }
       }
       return false;
 
     case "BindExpression":
-      if (
-        (parent.type === "BindExpression" &&
-          name === "callee" &&
-          parent.callee === node) ||
-        (parent.type === "MemberExpression" &&
-          name === "object" &&
-          parent.object === node) ||
-        (parent.type === "NewExpression" &&
-          name === "callee" &&
-          parent.callee === node)
-      ) {
-        return true;
-      }
-      return false;
+      return (
+        ((parent.type === "BindExpression" ||
+          parent.type === "NewExpression") &&
+          name === "callee") ||
+        ((parent.type === "MemberExpression" ||
+          parent.type === "OptionalMemberExpression") &&
+          name === "object")
+      );
     case "NGPipeExpression":
       if (
         parent.type === "NGRoot" ||
@@ -751,6 +737,37 @@ function needsParens(path, options) {
         return false;
       }
       return true;
+    case "JSXFragment":
+    case "JSXElement":
+      return (
+        name === "callee" ||
+        (parent.type !== "ArrayExpression" &&
+          parent.type !== "ArrowFunctionExpression" &&
+          parent.type !== "AssignmentExpression" &&
+          parent.type !== "AssignmentPattern" &&
+          parent.type !== "BinaryExpression" &&
+          parent.type !== "CallExpression" &&
+          parent.type !== "ConditionalExpression" &&
+          parent.type !== "ExpressionStatement" &&
+          parent.type !== "JsExpressionRoot" &&
+          parent.type !== "JSXAttribute" &&
+          parent.type !== "JSXElement" &&
+          parent.type !== "JSXExpressionContainer" &&
+          parent.type !== "JSXFragment" &&
+          parent.type !== "LogicalExpression" &&
+          parent.type !== "ObjectProperty" &&
+          parent.type !== "OptionalCallExpression" &&
+          parent.type !== "Property" &&
+          parent.type !== "ReturnStatement" &&
+          parent.type !== "TypeCastExpression" &&
+          parent.type !== "VariableDeclarator")
+      );
+    case "TypeAnnotation":
+      return (
+        name === "returnType" &&
+        parent.type === "ArrowFunctionExpression" &&
+        includesFunctionTypeInObjectType(node)
+      );
   }
 
   return false;
@@ -776,6 +793,7 @@ function isStatement(node) {
     node.type === "DeclareModuleExports" ||
     node.type === "DeclareVariable" ||
     node.type === "DoWhileStatement" ||
+    node.type === "EnumDeclaration" ||
     node.type === "ExportAllDeclaration" ||
     node.type === "ExportDefaultDeclaration" ||
     node.type === "ExportNamedDeclaration" ||
@@ -807,10 +825,14 @@ function isStatement(node) {
   );
 }
 
-function getUnparenthesizedNode(node) {
-  return node.type === "TSParenthesizedType"
-    ? getUnparenthesizedNode(node.typeAnnotation)
-    : node;
+function includesFunctionTypeInObjectType(node) {
+  return hasNode(
+    node,
+    n1 =>
+      (n1.type === "ObjectTypeAnnotation" &&
+        hasNode(n1, n2 => n2.type === "FunctionTypeAnnotation" || undefined)) ||
+      undefined
+  );
 }
 
 function endsWithRightBracket(node) {
